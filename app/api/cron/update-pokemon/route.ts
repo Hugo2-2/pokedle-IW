@@ -1,7 +1,24 @@
-// app/api/cron/update-pokemon/route.js
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@/libs/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+
+interface PokemonUpdateResult {
+  id: number;
+  status: 'success' | 'error';
+}
+
+interface PokemonData {
+  id: number;
+  nombre: string;
+  numero_pokedex: number;
+  tipos: string[];
+  peso: number;
+  altura: number;
+  habilidades: string[];
+  estadisticas: Record<string, number>;
+  imagen_url: string;
+  color?: string;
+  generacion?: string;
+}
 
 // Configurar el cron job (se ejecuta cada 10 minutos = 144 veces al día)
 export const maxDuration = 60; // Máximo 60 segundos
@@ -14,7 +31,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  const supabase = createRouteHandlerClient({ cookies });
+  const supabase = await createClient();
   
   try {
     // 1. Obtener próximo Pokémon a actualizar
@@ -34,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Bloquear estos Pokémon para evitar duplicados
-    const pokemonIds = pendingPokemon.map(p => p.pokemon_id);
+    const pokemonIds = pendingPokemon.map((p: { pokemon_id: number }) => p.pokemon_id);
     await supabase
       .from('pokemon_update_queue')
       .update({ 
@@ -44,7 +61,7 @@ export async function GET(request: NextRequest) {
       .in('pokemon_id', pokemonIds);
 
     // 3. Actualizar cada Pokémon
-    const results = [];
+    const results: PokemonUpdateResult[] = [];
     for (const item of pendingPokemon) {
       try {
         // Llamar a PokéAPI
@@ -71,15 +88,21 @@ export async function GET(request: NextRequest) {
         results.push({ id: item.pokemon_id, status: 'success' });
         
       } catch (error) {
-        console.error(`Error actualizando #${item.pokemon_id}:`, error);
+        console.error(`Error actualizando #${item.pokemon_id}:`, error instanceof Error ? error.message : 'Error desconocido');
         
-        // Marcar para reintento
+        // Marcar para reintento (obtener el error_count actual e incrementarlo)
+        const { data: current } = await supabase
+          .from('pokemon_update_queue')
+          .select('error_count')
+          .eq('pokemon_id', item.pokemon_id)
+          .single();
+
         await supabase
           .from('pokemon_update_queue')
           .update({ 
             status: 'pending',
             locked_until: null,
-            error_count: supabase.raw('error_count + 1')
+            error_count: (current?.error_count ?? 0) + 1
           })
           .eq('pokemon_id', item.pokemon_id);
         
@@ -93,7 +116,7 @@ export async function GET(request: NextRequest) {
     });
     
   } catch (error) {
-    console.error('Error en cron:', error);
+    console.error('Error en cron:', error instanceof Error ? error.message : 'Error desconocido');
     return NextResponse.json(
       { error: 'Error interno' },
       { status: 500 }
@@ -102,29 +125,29 @@ export async function GET(request: NextRequest) {
 }
 
 // Función helper para obtener datos de PokéAPI
-async function fetchPokemonFromAPI(id) {
+async function fetchPokemonFromAPI(id: number): Promise<PokemonData> {
   const pokemonResponse = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
   const pokemonData = await pokemonResponse.json();
   
   const speciesResponse = await fetch(pokemonData.species.url);
   const speciesData = await speciesResponse.json();
   
-  return {
+  const pokemonDataFormatted: PokemonData = {
     id: pokemonData.id,
     nombre: pokemonData.name,
     numero_pokedex: pokemonData.id,
-    tipos: pokemonData.types.map(t => t.type.name),
+    tipos: pokemonData.types.map((t: any) => t.type.name),
     peso: pokemonData.weight,
     altura: pokemonData.height,
-    habilidades: pokemonData.abilities.map(a => a.ability.name),
-    estadisticas: pokemonData.stats.reduce((acc, s) => {
+    habilidades: pokemonData.abilities.map((a: any) => a.ability.name),
+    estadisticas: pokemonData.stats.reduce((acc: Record<string, number>, s: any) => {
       acc[s.stat.name] = s.base_stat;
       return acc;
     }, {}),
     imagen_url: pokemonData.sprites.other['official-artwork'].front_default,
     color: speciesData.color?.name,
-    generacion: speciesData.generation?.name,
-    tasa_captura: speciesData.capture_rate,
-    updated_at: new Date().toISOString()
+    generacion: speciesData.generation?.name
   };
+  
+  return pokemonDataFormatted;
 }
