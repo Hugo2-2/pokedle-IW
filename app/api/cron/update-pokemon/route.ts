@@ -1,13 +1,13 @@
 // app/api/cron/update-pokemon/route.js
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 // Configurar el cron job (se ejecuta cada 10 minutos = 144 veces al día)
 export const maxDuration = 60; // Máximo 60 segundos
 export const dynamic = 'force-dynamic';
 
-export async function GET(request) {
+export async function GET(request: NextRequest) {
   // Verificar autenticación del cron (seguridad)
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {

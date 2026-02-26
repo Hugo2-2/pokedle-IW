@@ -55,7 +55,7 @@ CREATE INDEX idx_pokemon_color ON pokemon (color);
 CREATE INDEX idx_pokemon_habitat ON pokemon (habitat);
 
 -- Índice GIN para búsqueda en JSON de estadísticas
-CREATE INDEX idx_pokemon_estadisticas ON pokemon USING GIN (estadisticas);
+CREATE INDEX idx_pokemon_estadisticas ON pokemon USING GIN (estadisticas); 
 
 -- Habilitar RLS en todas las tablas
 ALTER TABLE pokemon ENABLE ROW LEVEL SECURITY;
@@ -71,27 +71,6 @@ CREATE POLICY "Cualquiera puede ver Pokémon"
 -- 2. Inserción/Actualización: Solo usuarios autenticados con rol específico
 CREATE POLICY "Solo admins pueden modificar Pokémon"
     ON pokemon
-    FOR ALL
-    USING (
-        auth.role() = 'authenticated' AND 
-        auth.jwt() ->> 'role' = 'admin'
-    )
-    WITH CHECK (
-        auth.role() = 'authenticated' AND 
-        auth.jwt() ->> 'role' = 'admin'
-    );
-
--- Políticas para pokemon_daily
-
--- 1. Lectura: Cualquiera puede ver el Pokémon diario
-CREATE POLICY "Cualquiera puede ver Pokémon diario"
-    ON pokemon_daily
-    FOR SELECT
-    USING (true);
-
--- 2. Inserción/Actualización: Solo admins o función programada
-CREATE POLICY "Solo sistema puede modificar Pokémon diario"
-    ON pokemon_daily
     FOR ALL
     USING (
         auth.role() = 'authenticated' AND 
